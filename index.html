@@ -6,21 +6,165 @@
     <title>rekoriku</title>
     <style>
       :root { color-scheme: light dark; }
-      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; max-width: 800px; margin: 64px auto; padding: 0 16px; }
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; max-width: 980px; margin: 64px auto; padding: 0 16px; }
       .card { border: 1px solid rgba(127,127,127,.35); border-radius: 12px; padding: 20px; }
       code { padding: 2px 6px; border-radius: 6px; background: rgba(127,127,127,.15); }
       a { color: inherit; }
+      .top { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+      .muted { opacity: .75; }
+      .controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+      input[type="search"], select { padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(127,127,127,.35); background: transparent; color: inherit; }
+      label { display: inline-flex; align-items: center; gap: 8px; }
+      .list { margin-top: 14px; display: grid; gap: 10px; }
+      .repo { border: 1px solid rgba(127,127,127,.25); border-radius: 12px; padding: 14px 14px; }
+      .repo h3 { margin: 0; font-size: 16px; }
+      .repo p { margin: 8px 0 10px; }
+      .meta { display: flex; gap: 12px; flex-wrap: wrap; font-size: 13px; opacity: .8; }
+      .pill { padding: 2px 8px; border-radius: 999px; border: 1px solid rgba(127,127,127,.25); }
+      .status { margin-top: 10px; font-size: 13px; }
     </style>
   </head>
   <body>
     <div class="card">
-      <h1>It works.</h1>
-      <p>This is a test GitHub Pages site for <code>rekoriku.github.io</code>.</p>
-      <p>
-        Links:
-        <a href="https://github.com/rekoriku">GitHub</a>
-      </p>
-      <p><small>Deployed via GitHub Pages.</small></p>
+      <div class="top">
+        <div>
+          <h1 style="margin: 0">Public repos</h1>
+          <div class="muted">GitHub: <a href="https://github.com/rekoriku">rekoriku</a></div>
+        </div>
+        <div class="controls">
+          <input id="q" type="search" placeholder="Search repos…" autocomplete="off" />
+          <select id="sort">
+            <option value="updated" selected>Sort: updated</option>
+            <option value="stars">Sort: stars</option>
+            <option value="name">Sort: name</option>
+          </select>
+          <label><input id="forks" type="checkbox" /> include forks</label>
+        </div>
+      </div>
+
+      <div id="status" class="status muted">Loading…</div>
+      <div id="list" class="list" aria-live="polite"></div>
     </div>
+
+    <script>
+      const USER = 'rekoriku';
+      const PER_PAGE = 100;
+
+      const elQ = document.getElementById('q');
+      const elSort = document.getElementById('sort');
+      const elForks = document.getElementById('forks');
+      const elStatus = document.getElementById('status');
+      const elList = document.getElementById('list');
+
+      let repos = [];
+      let lastError = '';
+
+      function fmtDate(iso) {
+        try {
+          return new Date(iso).toISOString().slice(0, 10);
+        } catch {
+          return '';
+        }
+      }
+
+      function repoCard(r) {
+        const stars = typeof r.stargazers_count === 'number' ? r.stargazers_count : 0;
+        const forks = typeof r.forks_count === 'number' ? r.forks_count : 0;
+        const lang = r.language || '';
+        const updated = r.updated_at ? fmtDate(r.updated_at) : '';
+        const desc = r.description || '';
+
+        const meta = [
+          lang ? `<span class="pill">${escapeHtml(lang)}</span>` : '',
+          `<span class="pill">★ ${stars}</span>`,
+          `<span class="pill">⑂ ${forks}</span>`,
+          updated ? `<span class="pill">updated ${updated}</span>` : '',
+          r.archived ? `<span class="pill">archived</span>` : '',
+          r.fork ? `<span class="pill">fork</span>` : '',
+        ].filter(Boolean).join('');
+
+        return `
+          <div class="repo">
+            <h3><a href="${r.html_url}" target="_blank" rel="noreferrer">${escapeHtml(r.name)}</a></h3>
+            ${desc ? `<p class="muted">${escapeHtml(desc)}</p>` : ''}
+            <div class="meta">${meta}</div>
+          </div>
+        `;
+      }
+
+      function escapeHtml(s) {
+        return String(s)
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#39;');
+      }
+
+      function applyFilterSort() {
+        const q = (elQ.value || '').trim().toLowerCase();
+        const includeForks = !!elForks.checked;
+        const sort = elSort.value;
+
+        let items = repos.slice();
+        if (!includeForks) items = items.filter(r => !r.fork);
+
+        if (q) {
+          items = items.filter(r => {
+            const hay = `${r.name || ''} ${r.description || ''} ${r.language || ''}`.toLowerCase();
+            return hay.includes(q);
+          });
+        }
+
+        items.sort((a, b) => {
+          if (sort === 'stars') return (b.stargazers_count || 0) - (a.stargazers_count || 0);
+          if (sort === 'name') return String(a.name || '').localeCompare(String(b.name || ''));
+          return String(b.updated_at || '').localeCompare(String(a.updated_at || ''));
+        });
+
+        elList.innerHTML = items.map(repoCard).join('');
+
+        const base = `${items.length} shown`;
+        const err = lastError ? ` · ${lastError}` : '';
+        elStatus.textContent = `${base} / ${repos.length} total${err}`;
+      }
+
+      async function fetchAllRepos() {
+        let page = 1;
+        const out = [];
+        while (true) {
+          const url = `https://api.github.com/users/${USER}/repos?per_page=${PER_PAGE}&page=${page}&type=public&sort=updated`;
+          const res = await fetch(url, { headers: { 'Accept': 'application/vnd.github+json' } });
+          if (!res.ok) {
+            const txt = await res.text().catch(() => '');
+            throw new Error(`GitHub API ${res.status}${txt ? `: ${txt}` : ''}`);
+          }
+          const batch = await res.json();
+          if (!Array.isArray(batch) || batch.length === 0) break;
+          out.push(...batch);
+          if (batch.length < PER_PAGE) break;
+          page += 1;
+          if (page > 10) break;
+        }
+        return out;
+      }
+
+      async function init() {
+        try {
+          repos = await fetchAllRepos();
+          lastError = '';
+        } catch (e) {
+          repos = [];
+          lastError = (e && e.message) ? e.message : 'Failed to load repos';
+        }
+        applyFilterSort();
+      }
+
+      elQ.addEventListener('input', applyFilterSort);
+      elSort.addEventListener('change', applyFilterSort);
+      elForks.addEventListener('change', applyFilterSort);
+
+      init();
+    </script>
   </body>
 </html>
