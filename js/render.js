@@ -1,33 +1,31 @@
 import { langColor, slugLang } from './lang.js';
-
 export function fmtDate(iso) {
-  try {
-    return new Date(iso).toISOString().slice(0, 10);
-  } catch {
-    return '';
-  }
+    try {
+        if (!iso)
+            return '';
+        return new Date(iso).toISOString().slice(0, 10);
+    }
+    catch {
+        return '';
+    }
 }
-
 export function escapeHtml(s) {
-  return String(s)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
+    return String(s || '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
 }
-
 export function repoRowHtml(r) {
-  const stars = typeof r.stargazers_count === 'number' ? r.stargazers_count : 0;
-  const forks = typeof r.forks_count === 'number' ? r.forks_count : 0;
-  const lang = r.language || '';
-  const updated = r.updated_at ? fmtDate(r.updated_at) : '';
-  const desc = r.description || '';
-
-  const langSlug = lang ? slugLang(lang) : '';
-  const langClr = lang ? langColor(lang) : '';
-
-  const metaLeft = `
+    const stars = typeof r.stargazers_count === 'number' ? r.stargazers_count : 0;
+    const forks = typeof r.forks_count === 'number' ? r.forks_count : 0;
+    const lang = r.language || '';
+    const updated = r.updated_at ? fmtDate(r.updated_at) : '';
+    const desc = r.description || '';
+    const langSlug = lang ? slugLang(lang) : '';
+    const langClr = lang ? langColor(lang) : '';
+    const metaLeft = `
           <div class="meta-grid">
             ${lang ? `<span class="meta-item lang lang-${langSlug}" style="--lang: ${langClr}">${escapeHtml(lang)}</span>` : ``}
             <span class="meta-item">★ ${stars}</span>
@@ -36,10 +34,8 @@ export function repoRowHtml(r) {
             ${r.fork ? `<span class="meta-label">fork</span>` : ``}
           </div>
         `;
-
-  const metaRight = updated ? `<div class="meta-right"><span class="updated">updated ${updated}</span></div>` : '';
-
-  return `
+    const metaRight = updated ? `<div class="meta-right"><span class="updated">updated ${updated}</span></div>` : '';
+    return `
           <article class="repo" role="listitem">
             <div class="repo-main">
               <h3><a href="${r.html_url}" target="_blank" rel="noreferrer">${escapeHtml(r.name)}</a></h3>
@@ -52,3 +48,4 @@ export function repoRowHtml(r) {
           </article>
         `;
 }
+//# sourceMappingURL=render.js.map

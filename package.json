@@ -1,0 +1,25 @@
+{
+  "name": "rekoriku.github.io",
+  "version": "1.0.0",
+  "description": "GitHub Pages site for displaying public repositories",
+  "type": "module",
+  "scripts": {
+    "build": "tsc && copy dist\\js\\*.js js\\ && rmdir /s /q dist",
+    "dev": "tsc --watch",
+    "clean": "rm -rf js/*.js js/*.js.map dist",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:run": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3",
+    "@types/node": "^20.10.5",
+    "vitest": "^1.1.0",
+    "jsdom": "^23.0.1",
+    "@vitest/ui": "^1.1.0"
+  },
+  "dependencies": {},
+  "keywords": ["github", "portfolio", "typescript"],
+  "author": "rekoriku",
+  "license": "MIT"
+}

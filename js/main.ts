@@ -1,0 +1,120 @@
+import { fetchAllRepos } from './api.js';
+import { repoRowHtml } from './render.js';
+import { readControlsFromUrl, writeControlsToUrl } from './state.js';
+import type { GitHubRepo, UrlState } from './types.js';
+
+// Configuration - make username configurable via environment or default
+const DEFAULT_USER = 'rekoriku';
+const USER = (import.meta.env?.VITE_GITHUB_USER as string) || DEFAULT_USER;
+const PER_PAGE = 100;
+
+const elQ = document.getElementById('q') as HTMLInputElement;
+const elSort = document.getElementById('sort') as HTMLSelectElement;
+const elForks = document.getElementById('forks') as HTMLInputElement;
+const elStatus = document.getElementById('status') as HTMLDivElement;
+const elList = document.getElementById('list') as HTMLDivElement;
+
+let repos: GitHubRepo[] = [];
+let lastError = '';
+let controller: AbortController | null = null;
+let suppressUrlWrite = false;
+
+function withViewTransition(updateDom: () => void): void {
+  const anyDoc = document as any;
+  if (typeof anyDoc.startViewTransition === 'function') {
+    anyDoc.startViewTransition(() => {
+      updateDom();
+    });
+    return;
+  }
+  updateDom();
+}
+
+function debounce(fn: (...args: any[]) => void, ms: number): (...args: any[]) => void {
+  let t = 0;
+  return (...args) => {
+    window.clearTimeout(t);
+    t = window.setTimeout(() => fn(...args), ms);
+  };
+}
+
+function renderList(items: GitHubRepo[]): void {
+  withViewTransition(() => {
+    elList.innerHTML = items.map(repoRowHtml).join('');
+  });
+}
+
+function applyFilterSort(): void {
+  const q = (elQ.value || '').trim().toLowerCase();
+  const includeForks = !!elForks.checked;
+  const sort = elSort.value as UrlState['sort'];
+
+  if (!suppressUrlWrite) {
+    writeControlsToUrl({ q: elQ.value || '', sort, forks: includeForks });
+  }
+
+  let items = repos.slice();
+  if (!includeForks) items = items.filter(r => !r.fork);
+
+  if (q) {
+    items = items.filter(r => {
+      const hay = `${r.name || ''} ${r.description || ''} ${r.language || ''}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }
+
+  items.sort((a, b) => {
+    if (sort === 'stars') return (b.stargazers_count || 0) - (a.stargazers_count || 0);
+    if (sort === 'name') return String(a.name || '').localeCompare(String(b.name || ''));
+    return String(b.updated_at || '').localeCompare(String(a.updated_at || ''));
+  });
+
+  renderList(items);
+
+  const base = `${items.length} shown`;
+  const err = lastError ? ` · ${lastError}` : '';
+  elStatus.textContent = `${base} / ${repos.length} total${err}`;
+}
+
+const applyFilterSortDebounced = debounce(applyFilterSort, 150);
+
+async function init(): Promise<void> {
+  const state = readControlsFromUrl();
+  elQ.value = state.q;
+  elSort.value = state.sort;
+  elForks.checked = !!state.forks;
+
+  elStatus.textContent = 'Loading…';
+
+  controller?.abort();
+  controller = new AbortController();
+
+  const { repos: loaded, error } = await fetchAllRepos({
+    user: USER,
+    perPage: PER_PAGE,
+    signal: controller.signal,
+  }).catch((e: Error) => {
+    if (e && e.name === 'AbortError') return { repos: [], error: '' };
+    return { repos: [], error: (e && e.message) ? e.message : 'Failed to load repos' };
+  });
+
+  repos = loaded;
+  lastError = error || '';
+  applyFilterSort();
+}
+
+window.addEventListener('popstate', () => {
+  const state = readControlsFromUrl();
+  suppressUrlWrite = true;
+  elQ.value = state.q;
+  elSort.value = state.sort;
+  elForks.checked = !!state.forks;
+  suppressUrlWrite = false;
+  applyFilterSort();
+});
+
+elQ.addEventListener('input', applyFilterSortDebounced);
+elSort.addEventListener('change', applyFilterSort);
+elForks.addEventListener('change', applyFilterSort);
+
+init();
